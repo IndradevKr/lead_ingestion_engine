@@ -40,6 +40,7 @@ export interface Confidence {
   confidence_score: number;
   confidence_label: 'Green' | 'Yellow' | 'Red';
   bounding_box?: BoundingBox;
+  sourceId?: string;
 }
 
 export interface VerifiedField {

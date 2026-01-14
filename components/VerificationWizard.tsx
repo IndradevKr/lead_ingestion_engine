@@ -44,14 +44,22 @@ const VerificationWizard: React.FC<VerificationWizardProps> = ({ enquiry, group,
       if (doc.extractedData) {
         Object.keys(doc.extractedData).forEach(key => {
           if (key !== 'work_experiences') {
-            (mergedData as any)[key] = (doc.extractedData as any)[key];
+            const field = (doc.extractedData as any)[key] as Confidence;
+            // Inject sourceId to track which doc this field belongs to
+            (mergedData as any)[key] = { ...field, sourceId: doc.id };
           }
         });
         if (doc.extractedData.work_experiences) {
+          const experiences = doc.extractedData.work_experiences.map(exp => ({
+              company: exp.company ? { ...exp.company, sourceId: doc.id } : undefined,
+              title: exp.title ? { ...exp.title, sourceId: doc.id } : undefined,
+              duration: exp.duration ? { ...exp.duration, sourceId: doc.id } : undefined
+          }));
+          
           mergedData.work_experiences = [
             ...(mergedData.work_experiences || []),
-            ...doc.extractedData.work_experiences
-          ];
+            ...experiences
+          ] as any;
         }
       }
     });
@@ -77,13 +85,23 @@ const VerificationWizard: React.FC<VerificationWizardProps> = ({ enquiry, group,
     return (
       <div 
         className="mb-4" 
-        onMouseEnter={() => setHoveredField({ box: valueObj?.bounding_box, label: confidenceLabel })}
+        onMouseEnter={() => {
+          // 1. Identify document ID and switch view if needed
+          if (valueObj?.sourceId) {
+             const docIndex = targetDocs.findIndex(d => d.id === valueObj.sourceId);
+             if (docIndex !== -1 && docIndex !== currentDocIndex) {
+                 setCurrentDocIndex(docIndex);
+             }
+          }
+          // 2. Set hover state for PDF highlighting
+          setHoveredField({ box: valueObj?.bounding_box, label: confidenceLabel });
+        }}
         onMouseLeave={() => setHoveredField({})}
       >
         <div className="flex justify-between items-center mb-1.5">
-          <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">{label}</label>
+          <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">{label}</label>
           {valueObj?.confidence_score !== undefined && (
-            <span className={`text-[8px] font-black px-1.5 py-0.5 rounded border ${
+            <span className={`text-[8px] font-bold px-1.5 py-0.5 rounded border ${
               confidenceLabel === 'Green' ? 'bg-emerald-100 text-emerald-700 border-emerald-200' :
               confidenceLabel === 'Yellow' ? 'bg-amber-100 text-amber-700 border-amber-200' :
               'bg-rose-100 text-rose-700 border-rose-200'
@@ -114,51 +132,54 @@ const VerificationWizard: React.FC<VerificationWizardProps> = ({ enquiry, group,
 
   const handleWorkExperienceChange = (index: number, field: 'company' | 'title' | 'duration', newVal: any) => {
     const updated = [...(formState.work_experiences || [])];
-    updated[index] = {
-      ...updated[index],
-      [field]: { ...updated[index][field], value: newVal }
-    };
-    setFormState(prev => ({ ...prev, work_experiences: updated }));
+    if (updated[index] && updated[index][field]) {
+        updated[index] = {
+            ...updated[index],
+            [field]: { ...updated[index][field]!, value: newVal }
+        };
+        setFormState(prev => ({ ...prev, work_experiences: updated }));
+    }
   };
 
   if (isProcessingDocs && targetDocs.length === 0) {
     return (
-      <div className="fixed inset-0 bg-slate-900/98 backdrop-blur-2xl z-[100] flex items-center justify-center flex-col p-8 text-center text-white">
-        <Loader2 className="text-blue-500 animate-spin mb-10" size={80} />
-        <h2 className="text-3xl font-black uppercase tracking-tighter">Gemini Context Synthesis</h2>
-        <p className="text-slate-400 mt-6 font-bold uppercase text-[11px] tracking-[0.3em] max-w-md leading-relaxed">
-          Mapping spatial coordinates and extracting multi-page artifacts for high-fidelity comparison.
+      <div className="fixed inset-0 bg-slate-900/98 backdrop-blur-2xl z-[1000] flex items-center justify-center flex-col p-8 text-center text-white">
+        <Loader2 className="text-indigo-400 animate-spin mb-10" size={80} />
+        <h2 className="text-3xl font-bold tracking-tight">AI Synthesis Cycle</h2>
+        <p className="text-slate-400 mt-6 font-medium uppercase text-[11px] tracking-[0.3em] max-w-md leading-relaxed">
+          Retrieving spatial anchors and locking source context for human audit.
         </p>
-        <button onClick={onCancel} className="mt-16 text-slate-500 hover:text-white font-black uppercase text-[11px] tracking-widest transition-all">Cancel Synchronization</button>
+        <button onClick={onCancel} className="mt-16 text-slate-500 hover:text-white font-bold uppercase text-[11px] tracking-widest transition-all">Abort Synchronization</button>
       </div>
     );
   }
 
   if (!currentDoc) return (
-    <div className="fixed inset-0 bg-white z-[100] flex items-center justify-center flex-col p-8 text-center">
+    <div className="fixed inset-0 bg-white z-[1000] flex items-center justify-center flex-col p-8 text-center">
       <div className="bg-amber-50 p-8 rounded-[40px] mb-8 text-amber-500">
         <AlertTriangle size={64} />
       </div>
-      <h2 className="text-3xl font-black text-slate-900 uppercase tracking-tight">Artifact Sequence Interrupted</h2>
-      <p className="text-slate-500 mt-4 font-bold uppercase text-xs tracking-widest">Required {group} document not ready for audit.</p>
-      <button onClick={onCancel} className="mt-12 bg-slate-900 text-white px-12 py-5 rounded-3xl font-black uppercase text-xs tracking-widest shadow-2xl transition-all">Close Portal</button>
+      <h2 className="text-3xl font-bold text-slate-900 tracking-tight">Artifact Sequence Interrupted</h2>
+      <p className="text-slate-500 mt-4 font-bold text-sm tracking-wide">Required source document not ready for side-by-side audit.</p>
+      <button onClick={onCancel} className="mt-12 bg-indigo-600 text-white px-12 py-5 rounded-3xl font-bold uppercase text-xs tracking-widest shadow-2xl transition-all">Close Panel</button>
     </div>
   );
 
   return (
-    <div className="fixed inset-0 bg-white z-[100] flex flex-col font-inter">
-      <header className="h-24 border-b flex items-center justify-between px-10 bg-slate-900 text-white shadow-2xl z-20">
+    <div className="fixed inset-0 bg-white z-[1000] flex flex-col font-inter">
+      {/* Updated Header Color to Indigo-600 to match new brand identity */}
+      <header className="h-24 border-b flex items-center justify-between px-10 bg-indigo-600 text-white shadow-xl z-20">
         <div className="flex items-center space-x-6">
-          <div className="bg-blue-600 h-12 w-12 rounded-2xl flex items-center justify-center font-black text-xl shadow-lg">V</div>
+          <div className="bg-white/10 h-12 w-12 rounded-2xl flex items-center justify-center font-bold text-xl shadow-lg border border-white/10">V</div>
           <div>
-            <h2 className="font-black text-[9px] uppercase tracking-[0.3em] text-blue-400 mb-0.5">Audit In Progress: {currentDoc.category}</h2>
-            <p className="text-2xl font-black tracking-tighter uppercase">{group}</p>
+            <h2 className="font-bold text-[9px] uppercase tracking-[0.3em] text-indigo-200 mb-0.5">Audit Mode: {currentDoc.category}</h2>
+            <p className="text-2xl font-bold tracking-tight uppercase">{group}</p>
           </div>
         </div>
         <div className="flex items-center space-x-6">
-          <button onClick={onCancel} className="text-[10px] font-black text-slate-500 hover:text-white uppercase tracking-widest transition-all">Abort</button>
-          <button onClick={handleNext} className="bg-blue-600 hover:bg-blue-500 px-10 py-4 rounded-2xl font-black uppercase text-[10px] tracking-widest transition-all shadow-xl flex items-center transform hover:-translate-y-0.5 active:translate-y-0">
-            {currentDocIndex === targetDocs.length - 1 ? 'Complete Ingestion' : 'Next Step'}
+          <button onClick={onCancel} className="text-[10px] font-bold text-indigo-100 hover:text-white uppercase tracking-widest transition-all">Abort Flow</button>
+          <button onClick={handleNext} className="bg-white text-indigo-600 hover:bg-indigo-50 px-10 py-4 rounded-2xl font-bold uppercase text-[10px] tracking-widest transition-all shadow-xl flex items-center transform active:scale-95">
+            {currentDocIndex === targetDocs.length - 1 ? 'Commit Verified Ingestion' : 'Next Step'}
             <ArrowRight size={16} className="ml-2" />
           </button>
         </div>
@@ -174,8 +195,8 @@ const VerificationWizard: React.FC<VerificationWizardProps> = ({ enquiry, group,
         </div>
         <aside className="w-[500px] bg-white overflow-y-auto p-10 flex flex-col shadow-2xl z-10 scrollbar-thin">
           <div className="flex items-center justify-between mb-10">
-            <h3 className="text-xl font-black text-slate-900 tracking-tighter flex items-center uppercase">
-              <ShieldCheck className="mr-3 text-blue-600" size={24} /> Field Verification
+            <h3 className="text-xl font-bold text-slate-900 tracking-tight flex items-center uppercase">
+              <ShieldCheck className="mr-3 text-indigo-600" size={24} /> Audit Panel
             </h3>
           </div>
           
@@ -183,7 +204,7 @@ const VerificationWizard: React.FC<VerificationWizardProps> = ({ enquiry, group,
             {group === VerificationGroup.PERSONAL_WORK && (
               <>
                 <section>
-                  <h4 className="text-[11px] font-black text-blue-600 tracking-[0.2em] uppercase mb-6 flex items-center">
+                  <h4 className="text-[11px] font-bold text-indigo-600 tracking-[0.2em] uppercase mb-6 flex items-center border-b border-indigo-50 pb-2">
                     <User className="mr-2" size={16} /> Personal Information
                   </h4>
                   {renderField('First Name', formState.first_name, (v) => handleFieldChange('first_name', v))}
@@ -195,11 +216,11 @@ const VerificationWizard: React.FC<VerificationWizardProps> = ({ enquiry, group,
                 </section>
                 
                 <section>
-                  <h4 className="text-[11px] font-black text-indigo-600 tracking-[0.2em] uppercase mb-6 flex items-center">
+                  <h4 className="text-[11px] font-bold text-indigo-600 tracking-[0.2em] uppercase mb-6 flex items-center border-b border-indigo-50 pb-2">
                     <Briefcase className="mr-2" size={16} /> Professional Experience
                   </h4>
                   {(formState.work_experiences || []).map((exp, idx) => (
-                    <div key={idx} className="mb-8 p-5 bg-slate-50 rounded-2xl border border-slate-100 relative">
+                    <div key={idx} className="mb-8 p-5 bg-slate-50 rounded-2xl border border-slate-100 relative shadow-sm">
                       <div className="absolute top-3 right-3">
                         <button onClick={() => {
                           const updated = [...(formState.work_experiences || [])];
@@ -209,7 +230,7 @@ const VerificationWizard: React.FC<VerificationWizardProps> = ({ enquiry, group,
                           <Trash2 size={14} />
                         </button>
                       </div>
-                      <p className="text-[8px] font-black text-indigo-400 uppercase tracking-widest mb-4">Record {idx + 1}</p>
+                      <p className="text-[8px] font-bold text-indigo-400 uppercase tracking-widest mb-4">Entry {idx + 1}</p>
                       {renderField('Organization', exp.company, (v) => handleWorkExperienceChange(idx, 'company', v))}
                       {renderField('Job Title', exp.title, (v) => handleWorkExperienceChange(idx, 'title', v))}
                       {renderField('Service Period', exp.duration, (v) => handleWorkExperienceChange(idx, 'duration', v))}
@@ -222,8 +243,8 @@ const VerificationWizard: React.FC<VerificationWizardProps> = ({ enquiry, group,
                       duration: { value: '', confidence_score: 0, confidence_label: 'Red' } as Confidence 
                     };
                     setFormState(prev => ({ ...prev, work_experiences: [...(prev.work_experiences || []), newItem] }));
-                  }} className="w-full py-3.5 border-2 border-dashed border-slate-200 rounded-2xl text-slate-400 font-black uppercase text-[9px] tracking-widest hover:border-indigo-300 hover:text-indigo-600 transition-all flex items-center justify-center">
-                    <Plus size={14} className="mr-2" /> Append Experience
+                  }} className="w-full py-3.5 border-2 border-dashed border-slate-200 rounded-2xl text-slate-400 font-bold uppercase text-[9px] tracking-widest hover:border-indigo-300 hover:text-indigo-600 transition-all flex items-center justify-center">
+                    <Plus size={14} className="mr-2" /> Append Career History
                   </button>
                 </section>
               </>
@@ -231,23 +252,23 @@ const VerificationWizard: React.FC<VerificationWizardProps> = ({ enquiry, group,
 
             {group === VerificationGroup.EDUCATION && (
               <section>
-                <h4 className="text-[11px] font-black text-emerald-600 tracking-[0.2em] uppercase mb-6 flex items-center">
+                <h4 className="text-[11px] font-bold text-indigo-600 tracking-[0.2em] uppercase mb-6 flex items-center border-b border-indigo-50 pb-2">
                   <GraduationCap className="mr-2" size={16} /> Educational Profile
                 </h4>
                 {renderField('Education Level', formState.level_of_education, (v) => handleFieldChange('level_of_education', v))}
                 {renderField('Degree Title', formState.degree, (v) => handleFieldChange('degree', v))}
                 {renderField('Course of Study', formState.course, (v) => handleFieldChange('course', v))}
-                {renderField('University / School', formState.institution, (v) => handleFieldChange('institution', v))}
-                {renderField('Academic Period', formState.edu_duration, (v) => handleFieldChange('edu_duration', v))}
-                {renderField('GPA / Marks', formState.gpa_or_percentage, (v) => handleFieldChange('gpa_or_percentage', v))}
+                {renderField('Awarding Body', formState.institution, (v) => handleFieldChange('institution', v))}
+                {renderField('Academic Tenure', formState.edu_duration, (v) => handleFieldChange('edu_duration', v))}
+                {renderField('GPA / Evaluation', formState.gpa_or_percentage, (v) => handleFieldChange('gpa_or_percentage', v))}
                 {renderField('Year Conferred', formState.year_of_completion, (v) => handleFieldChange('year_of_completion', v))}
               </section>
             )}
 
             {group === VerificationGroup.LANGUAGE && (
               <section>
-                <h4 className="text-[11px] font-black text-amber-500 tracking-[0.2em] uppercase mb-6 flex items-center">
-                  <Languages className="mr-2" size={16} /> Language Proficiency
+                <h4 className="text-[11px] font-bold text-indigo-600 tracking-[0.2em] uppercase mb-6 flex items-center border-b border-indigo-50 pb-2">
+                  <Languages className="mr-2" size={16} /> Language Competency
                 </h4>
                 {renderField('Test Standard', formState.test_type, (v) => handleFieldChange('test_type', v))}
                 <div className="grid grid-cols-2 gap-x-4">
@@ -256,32 +277,32 @@ const VerificationWizard: React.FC<VerificationWizardProps> = ({ enquiry, group,
                   {renderField('Writing', formState.writing_score, (v) => handleFieldChange('writing_score', v))}
                   {renderField('Speaking', formState.speaking_score, (v) => handleFieldChange('speaking_score', v))}
                 </div>
-                {renderField('Overall Score', formState.overall_score, (v) => handleFieldChange('overall_score', v))}
+                {renderField('Overall Result', formState.overall_score, (v) => handleFieldChange('overall_score', v))}
               </section>
             )}
 
             {group === VerificationGroup.COE && (
               <section>
-                <h4 className="text-[11px] font-black text-rose-500 tracking-[0.2em] uppercase mb-6 flex items-center">
-                  <FileBarChart className="mr-2" size={16} /> Enrollment Data
+                <h4 className="text-[11px] font-bold text-indigo-600 tracking-[0.2em] uppercase mb-6 flex items-center border-b border-indigo-50 pb-2">
+                  <FileBarChart className="mr-2" size={16} /> Application Details
                 </h4>
                 <div className="grid grid-cols-2 gap-x-4">
                   {renderField('Course Start', formState.course_start_date, (v) => handleFieldChange('course_start_date', v))}
                   {renderField('Course End', formState.course_end_date, (v) => handleFieldChange('course_end_date', v))}
                   {renderField('Initial Deposit', formState.initial_tuition_fee, (v) => handleFieldChange('initial_tuition_fee', v))}
-                  {renderField('Total Tuition', formState.total_tuition_fee, (v) => handleFieldChange('total_tuition_fee', v))}
+                  {renderField('Total Liability', formState.total_tuition_fee, (v) => handleFieldChange('total_tuition_fee', v))}
                 </div>
               </section>
             )}
           </div>
 
-          <div className="mt-12 p-6 bg-slate-900 rounded-3xl text-white shadow-xl relative overflow-hidden group">
+          <div className="mt-12 p-6 bg-indigo-900 rounded-3xl text-white shadow-xl relative overflow-hidden group">
             <div className="absolute top-0 right-0 p-4 opacity-10 group-hover:scale-110 transition-all pointer-events-none">
               <Lightbulb size={100} />
             </div>
-            <p className="text-[10px] font-black uppercase tracking-[0.2em] text-blue-400 mb-2">Audit Logic</p>
-            <p className="text-[10px] font-bold tracking-tight leading-relaxed text-slate-300">
-              Hover over a field to visualize its spatial anchor on the stable base layer. Confidence scoring is AI-inferred.
+            <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-indigo-400 mb-2">Spatial Context</p>
+            <p className="text-[10px] font-medium tracking-tight leading-relaxed text-indigo-100">
+              Hover over form inputs to synchronize with stable spatial coordinates on the document layer. Audit integrity is priority.
             </p>
           </div>
         </aside>
