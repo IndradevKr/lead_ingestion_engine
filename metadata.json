@@ -1,0 +1,5 @@
+{
+  "name": "Intelligent Ingestion Engine-Final",
+  "description": "A production-grade MVP for document classification, data extraction, and human-in-the-loop verification using Gemini AI.",
+  "requestFramePermissions": []
+}
